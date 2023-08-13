@@ -1,7 +1,14 @@
 #include <bits/stdc++.h>
 using namespace std;
 
-const string usersFile = "users.txt";
+struct userInfo {
+	int id;
+	string username;
+	string password;
+	string name;
+	string email;
+	int AQ;
+};
 
 class FileDataBase {
 private:
@@ -9,7 +16,7 @@ private:
 	vector<string> records;
 
 	void loadFile() {
-		ifstream fin(usersFile);
+		ifstream fin(filename);
 
 		string record;
 		while (getline(fin, record))
@@ -19,6 +26,7 @@ private:
 	}
 
 public:
+	FileDataBase() {}
 	FileDataBase(string filename) {
 		this->filename = filename;
 		loadFile();
@@ -30,7 +38,7 @@ public:
 
 	void write(const string &record) {
 		auto status = ios::in | ios::out | ios::app;
-		ofstream fout(usersFile, status);
+		ofstream fout(filename, status);
 		fout << record;
 		fout.close();
 		
@@ -40,18 +48,28 @@ public:
 
 class Login {
 private:
-	FileDataBase fileDataBase = FileDataBase(usersFile);
+	map<string, pair<string, int>> usernamePasswordMapping;
 
 public:
+	Login() {}
+	Login(const vector<userInfo> &users) {
+		for (auto &user: users)
+			usernamePasswordMapping[user.username] = {user.password, user.id};
+	}
+
 	int login(const string &username, const string &password) {
-		return -1;
+		if (!usernamePasswordMapping.count(username))
+			return -1;
+	
+		if (usernamePasswordMapping[username].first != password)
+			return -1;
+
+		return usernamePasswordMapping[username].second;
 	}
 };
 
 class Signup {
 private:
-	FileDataBase fileDataBase = FileDataBase(usersFile);
-
 	bool userAlreadyExist(const string &username) {
 		return false;
 	}
@@ -61,15 +79,56 @@ private:
 	}
 
 public:
+	Signup() {}
+	Signup(const vector<userInfo> &allUsers) {
+
+	}
+
 	int signup(const string &username, const string &password, const string &name, const string &email, int AQ) {
 		return -1;
 	}
 };
 
-class LoginMenu {
+class Register {
 private:
+	const string file = "users.txt";
+	FileDataBase fileDataBase;
 	Login login;
 	Signup signup;
+	vector<userInfo> users;
+
+	void encodeInfo() {
+		vector<string> records = fileDataBase.read();
+
+		for (auto &record: records) {
+			istringstream iss(record);
+			userInfo user;
+			iss >> user.id >> user.username >> user.password >> user.name >> user.email >> user.AQ;
+			users.push_back(user);
+		}
+	}
+
+public:
+	Register() {
+		fileDataBase = FileDataBase(file);
+
+		encodeInfo();
+		this->login = Login(users);
+		this->signup = Signup(users);
+	}
+
+	int signUp(const string &username, const string &password, const string &name, const string &email, int AQ) {
+		return signup.signup(username, password, name, email, AQ);
+	}
+
+	int logIn(const string &username, const string &password) {
+		return login.login(username, password);
+	}
+};
+
+class LoginMenu {
+private:
+	Register reg;
 
 	int menu() {
 		cout << "Menu:\n";
@@ -88,7 +147,11 @@ private:
 		string username, password;
 		cin >> username >> password;
 		
-		return login.login(username, password);
+		int userId = reg.logIn(username, password);
+		if (userId == -1)
+			cout << "Invalid Username or Passowrd. Try Again\n";
+
+		return userId;
 	}
 
 	int signupMenu() {
@@ -110,11 +173,17 @@ private:
 		cout << "Allow anonymous questions?: (0 or 1) ";
 		cin >> AQ;
 
-		return signup.signup(username, password, name, email, AQ);
+		int userId = reg.signUp(username, password, name, email, AQ);
+		if (userId == -1)
+			cout << "Invalid Signup Try Again\n";
+
+		return userId;
 	}
 
 public:
-	LoginMenu() {
+	LoginMenu() {}
+
+	void run() {
 		int loggedId = -1;
 		while (loggedId == -1) {
 			int menuOption = menu();
@@ -126,6 +195,8 @@ public:
 
 			cout << endl;
 		}
+
+		cout << loggedId << endl;
 	}
 };
 
@@ -135,7 +206,7 @@ private:
 
 public:
 	Ask() {	
-		loginMenu = LoginMenu();
+		loginMenu.run();
 	}
 };
 

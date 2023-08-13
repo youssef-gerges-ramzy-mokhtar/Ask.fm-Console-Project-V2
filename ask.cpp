@@ -69,19 +69,29 @@ public:
 };
 
 class Signup {
+public:
+	unordered_map<string, userInfo> usernameMapping;
+
 private:
 	bool userAlreadyExist(const string &username) {
+		if (usernameMapping.count(username))
+			return true;
 		return false;
 	}
 
 	bool noSpace(const string &str) {
-		return false;
+		for (auto &ch: str)
+			if (ch == ' ')
+				return false;
+		
+		return true;
 	}
 
 public:
 	Signup() {}
 	Signup(const vector<userInfo> &allUsers) {
-
+		for (auto &user: allUsers)
+			usernameMapping[user.username] = user;
 	}
 
 	int signup(const string &username, const string &password, const string &name, const string &email, int AQ) {
@@ -97,7 +107,7 @@ private:
 	Signup signup;
 	vector<userInfo> users;
 
-	void encodeInfo() {
+	void fetchUsersRecords() {
 		vector<string> records = fileDataBase.read();
 
 		for (auto &record: records) {
@@ -112,7 +122,7 @@ public:
 	Register() {
 		fileDataBase = FileDataBase(file);
 
-		encodeInfo();
+		fetchUsersRecords();
 		this->login = Login(users);
 		this->signup = Signup(users);
 	}
@@ -123,6 +133,14 @@ public:
 
 	int logIn(const string &username, const string &password) {
 		return login.login(username, password);
+	}
+
+	string getUserName(int userId) {
+		for (auto &user: users)
+			if (user.id == userId)
+				return user.username;
+
+		return "";
 	}
 };
 

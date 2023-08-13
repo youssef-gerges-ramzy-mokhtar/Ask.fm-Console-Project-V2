@@ -69,10 +69,9 @@ public:
 };
 
 class Signup {
-public:
+private:
 	unordered_map<string, userInfo> usernameMapping;
 
-private:
 	bool userAlreadyExist(const string &username) {
 		if (usernameMapping.count(username))
 			return true;

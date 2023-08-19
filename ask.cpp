@@ -1,13 +1,17 @@
 #include <bits/stdc++.h>
 using namespace std;
 
-struct userInfo {
+struct UserInfo {
 	int id;
 	string username;
 	string password;
 	string name;
 	string email;
 	int AQ;
+
+	string stringfy(char seperator = ' ') {
+		return to_string(id) + seperator + username + seperator + password + seperator + name + seperator + email + seperator + to_string(AQ) + "\n";
+	}
 };
 
 class FileDataBase {
@@ -48,53 +52,60 @@ public:
 
 class Login {
 private:
-	map<string, pair<string, int>> usernamePasswordMapping;
+	const map<string, UserInfo> *users;
 
 public:
-	Login() {}
-	Login(const vector<userInfo> &users) {
-		for (auto &user: users)
-			usernamePasswordMapping[user.username] = {user.password, user.id};
+	Login() {
+		users = new map<string, UserInfo>();
 	}
+	Login(const map<string, UserInfo> *users) : users(users) {}
 
 	int login(const string &username, const string &password) {
-		if (!usernamePasswordMapping.count(username))
+		if (!users->count(username))
 			return -1;
 	
-		if (usernamePasswordMapping[username].first != password)
+		if (users->at(username).password != password)
 			return -1;
 
-		return usernamePasswordMapping[username].second;
+		return users->at(username).id;
 	}
 };
 
 class Signup {
 private:
-	unordered_map<string, userInfo> usernameMapping;
+	const map<string, UserInfo> *users;
 
 	bool userAlreadyExist(const string &username) {
-		if (usernameMapping.count(username))
+		if (users->count(username))
 			return true;
 		return false;
 	}
 
-	bool noSpace(const string &str) {
+	bool containsSpaces(const string &str) {
 		for (auto &ch: str)
 			if (ch == ' ')
-				return false;
+				return true;
 		
-		return true;
+		return false;
 	}
 
 public:
-	Signup() {}
-	Signup(const vector<userInfo> &allUsers) {
-		for (auto &user: allUsers)
-			usernameMapping[user.username] = user;
+	Signup() {
+		users = new map<string, UserInfo>();
 	}
+	Signup(const map<string, UserInfo> *users) : users(users) {}
 
 	int signup(const string &username, const string &password, const string &name, const string &email, int AQ) {
-		return -1;
+		if (userAlreadyExist(username))
+			return -1;
+
+		if (containsSpaces(username) || containsSpaces(password) || containsSpaces(name) || containsSpaces(email))
+			return -1;
+
+		if (!(0 <= AQ && AQ <= 1))
+			return -1;
+
+		return users->size();
 	}
 };
 
@@ -104,16 +115,16 @@ private:
 	FileDataBase fileDataBase;
 	Login login;
 	Signup signup;
-	vector<userInfo> users;
+	map<string, UserInfo> users;
 
 	void fetchUsersRecords() {
 		vector<string> records = fileDataBase.read();
 
 		for (auto &record: records) {
 			istringstream iss(record);
-			userInfo user;
+			UserInfo user;
 			iss >> user.id >> user.username >> user.password >> user.name >> user.email >> user.AQ;
-			users.push_back(user);
+			users[user.username] = user;
 		}
 	}
 
@@ -122,12 +133,19 @@ public:
 		fileDataBase = FileDataBase(file);
 
 		fetchUsersRecords();
-		this->login = Login(users);
-		this->signup = Signup(users);
+		this->login = Login(&users);
+		this->signup = Signup(&users);
 	}
 
 	int signUp(const string &username, const string &password, const string &name, const string &email, int AQ) {
-		return signup.signup(username, password, name, email, AQ);
+		int userId = signup.signup(username, password, name, email, AQ);
+		if (userId == -1)
+			return userId;
+
+		UserInfo newUser = {userId, username, password, name, email, AQ};
+		fileDataBase.write(newUser.stringfy());
+		users[username] = newUser;
+		return userId;
 	}
 
 	int logIn(const string &username, const string &password) {
@@ -136,8 +154,8 @@ public:
 
 	string getUserName(int userId) {
 		for (auto &user: users)
-			if (user.id == userId)
-				return user.username;
+			if (user.second.id == userId)
+				return user.first;
 
 		return "";
 	}

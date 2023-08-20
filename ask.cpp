@@ -33,10 +33,11 @@ public:
 	FileDataBase() {}
 	FileDataBase(string filename) {
 		this->filename = filename;
-		loadFile();
 	}
 
 	const vector<string>& read() {
+		this->records.clear();
+		loadFile();
 		return this->records;
 	}
 
@@ -218,7 +219,7 @@ private:
 public:
 	LoginMenu() {}
 
-	void run() {
+	int run() {
 		int loggedId = -1;
 		while (loggedId == -1) {
 			int menuOption = menu();
@@ -231,17 +232,49 @@ public:
 			cout << endl;
 		}
 
-		cout << loggedId << endl;
+		cout << "Welcome " << reg.getUserName(loggedId) << endl;
+		return loggedId;
 	}
 };
 
 class Ask {
 private:
 	LoginMenu loginMenu;
+	int userId;
+
+	int menu() {
+		cout << "Menu:\n";
+		cout << "\t\t1: Print Questions To Me\n";
+		cout << "\t\t2: Print Questions From Me\n";
+		cout << "\t\t3: Answer Questions\n";
+		cout << "\t\t4: Delete Questions\n";
+		cout << "\t\t5: Ask Question\n";
+		cout << "\t\t6: List System Users\n";
+		cout << "\t\t7: Feed\n";
+		cout << "\t\t7: Logout\n";
+		
+		int choice;
+		cin >> choice;
+
+		return choice;
+	}
 
 public:
 	Ask() {	
-		loginMenu.run();
+		userId = loginMenu.run();
+	
+		int choice = -1;
+		while (choice != 8) {
+			choice = menu();
+
+			if (choice == 1);
+			else if (choice == 2);
+			else if (choice == 3);
+			else if (choice == 4);
+			else if (choice == 5);
+			else if (choice == 6);
+			else if (choice == 7);
+		}
 	}
 };
 

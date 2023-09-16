@@ -54,6 +54,11 @@ struct UserInfo {
 	string stringfy(char seperator = ' ') {
 		return to_string(id) + seperator + username + seperator + password + seperator + name + seperator + email + seperator + to_string(AQ) + "\n";
 	}
+
+	void decode(const string &userRecord) {
+		istringstream iss(userRecord);
+		iss >> id >> username >> password >> name >> email >> AQ;
+	}
 };
 
 class Login {
@@ -127,9 +132,8 @@ private:
 		vector<string> records = fileDataBase.read();
 
 		for (auto &record: records) {
-			istringstream iss(record);
 			UserInfo user;
-			iss >> user.id >> user.username >> user.password >> user.name >> user.email >> user.AQ;
+			user.decode(record);
 			users[user.username] = user;
 		}
 	}
@@ -245,10 +249,10 @@ public:
 
 struct Question {
 	int id;
-	int parentQuestionId;
 	int fromUserId;
 	int toUserId;
 	int anonymous;
+	int parentQuestionId;
 	string question;
 	string answer;
 	vector<Question*> threads = {};
@@ -263,90 +267,99 @@ struct Question {
 			question + "\n" +
 			answer + "\n";
 	}
-};
 
-class QuestionLoader {
-private:
-	const string file = "questions.txt";
-	FileDataBase fileDataBase;
+	void decode(pair<string, string> questionRecord, char seperator = ',') {
+		istringstream iss(questionRecord.first);
 
-	Question* decodeQuestion(string questionInfo, string answer) {
-		Question* q = new Question();
-		istringstream iss(questionInfo);
+		iss >> id >> seperator;
+		iss >> fromUserId >> seperator;
+		iss >> toUserId >> seperator;
+		iss >> anonymous >> seperator;
+		iss >> parentQuestionId >> seperator;
+		getline(iss, question);
 		
-		char seperator = ',';
-		iss >> q->id >> seperator;
-		iss >> q->fromUserId >> seperator;
-		iss >> q->toUserId >> seperator;
-		iss >> q->anonymous >> seperator;
-		iss >> q->parentQuestionId >> seperator;
-		getline(iss, q->question);
-		q->answer = answer;
-
-		return q;
-	}
-
-public:
-	QuestionLoader() {
-		fileDataBase = FileDataBase(file);
-	}
-
-	void load(vector<Question*> &questions) {
-		vector<string> records = fileDataBase.read();
-		
-		unordered_map<int, Question*> parentQuestions;
-		vector<Question*> threadQuestions;
-		for (int i = 0; i < records.size(); i += 2) {
-			string questionInfo = records[i];
-			string answer = records[i+1];
-
-			Question* q = decodeQuestion(questionInfo, answer);
-			if (q->parentQuestionId == -1)
-				parentQuestions[q->id] = q;
-			else
-				threadQuestions.push_back(q);
-		}
-
-		for (auto &thread: threadQuestions)
-			parentQuestions[thread->parentQuestionId]->threads.push_back(thread);
-
-		for (auto &question: parentQuestions)
-			questions.push_back(question.second);
-	}
-};
-
-class QuestionSaver {
-private:
-	const string file = "questions.txt";
-	FileDataBase fileDataBase;
-
-public:
-	QuestionSaver() {
-		fileDataBase = FileDataBase(file);
-	}
-
-	void save(vector<Question*> &questions) {
-		fileDataBase.clear();
-
-		for (auto &question: questions) {
-			fileDataBase.write(question->stringfy());
-			for (auto &thread: question->threads)
-				fileDataBase.write(thread->stringfy());
-		}
+		this->answer = questionRecord.second;
 	}
 };
 
 class QuestionLoaderSaver {
 private:
+	class QuestionLoader {
+	private:
+		const string file = "questions.txt";
+		FileDataBase fileDataBase;
+
+	public:
+		QuestionLoader() {
+			fileDataBase = FileDataBase(file);
+		}
+
+		void load(vector<Question*> &questions) {
+			vector<string> records = fileDataBase.read();
+			
+			unordered_map<int, Question*> parentQuestions;
+			vector<Question*> threadQuestions;
+			for (int i = 0; i < records.size(); i += 2) {
+				string questionInfo = records[i];
+				string answer = records[i+1];
+
+				Question* q = new Question();
+				q->decode({questionInfo, answer});
+				if (q->parentQuestionId == -1)
+					parentQuestions[q->id] = q;
+				else
+					threadQuestions.push_back(q);
+			}
+
+			for (auto &thread: threadQuestions)
+				parentQuestions[thread->parentQuestionId]->threads.push_back(thread);
+
+			for (auto &question: parentQuestions)
+				questions.push_back(question.second);
+		}
+	};
+
+	class QuestionSaver {
+	private:
+		const string file = "questions.txt";
+		FileDataBase fileDataBase;
+
+	public:
+		QuestionSaver() {
+			fileDataBase = FileDataBase(file);
+		}
+
+		void save(vector<Question*> &questions) {
+			fileDataBase.clear();
+
+			for (auto &question: questions) {
+				fileDataBase.write(question->stringfy());
+				for (auto &thread: question->threads)
+					fileDataBase.write(thread->stringfy());
+			}
+		}
+	};
+
+private:
 	vector<Question*> questions;
+	unordered_map<int, Question*> questionsMap;
 	QuestionLoader qLoader = QuestionLoader();
 	QuestionSaver qSaver = QuestionSaver();
+
+	int generateQuestionId() {
+		int id = 0;
+		for (auto &question: questions)
+			id += 1 + question->threads.size();
+
+		return id;
+	}
 
 public:
 	QuestionLoaderSaver() {}
 
 	void load(int userId, vector<Question*> &toUser, vector<Question*> &fromUser) {
 		questions.clear();
+		questionsMap.clear();
 		qLoader.load(questions);
 
 		for (auto &question: questions) {
@@ -355,6 +368,8 @@ public:
 
 			if (question->fromUserId == userId)
 				fromUser.push_back(question);
+
+			questionsMap[question->id] = question;
 		}
 	}
 
@@ -363,7 +378,62 @@ public:
 	}
 
 	void addQuestion(Question* question) {
+		question->id = generateQuestionId();
 		questions.push_back(question);
+		save();
+	}
+
+	void addThreadQuestion(Question* thread) {
+		int parentQID = thread->parentQuestionId;
+		if (!parentQuestionExist(parentQID))
+			return;
+
+		thread->id = generateQuestionId();
+		questionsMap[parentQID]->threads.push_back(thread);
+		save();
+	}
+
+	bool parentQuestionExist(int qid) {
+		return questionsMap.count(qid);
+	}
+};
+
+class UserListing {
+private:
+	const string file = "users.txt";
+	FileDataBase fileDataBase;
+	vector<UserInfo> users;
+
+	void loadUsers() {
+		users.clear();
+
+		vector<string> records = fileDataBase.read();
+		for (auto &record: records) {
+			UserInfo user;
+			user.decode(record);
+			users.push_back(user);
+		}
+	}
+
+public:
+	UserListing() {
+		fileDataBase = FileDataBase(file);
+	}
+
+	UserInfo getUser(int userId) {
+		loadUsers();
+
+		for (auto &user: users)
+			if (user.id == userId)
+				return user;
+	
+		UserInfo notFoundUser = {-1};	
+		return notFoundUser;
+	}
+
+	vector<UserInfo> getAllUsers() {
+		loadUsers();
+		return users;
 	}
 };
 
@@ -371,6 +441,7 @@ class UserOperations {
 private:
 	int userId;
 	QuestionLoaderSaver qLoaderSaver;
+	UserListing userListing;
 	
 	vector<Question*> toMeArr;
 	vector<Question*> fromMeArr;
@@ -384,11 +455,17 @@ private:
 		fromMeArr.clear();
 
 		qLoaderSaver.load(userId, toMeArr, fromMeArr);
-		for (auto &question: toMeArr)
+		for (auto &question: toMeArr) {
 			toMe[question->id] = question;
+			for (auto &thread: question->threads)
+				toMe[thread->id] = thread;
+		}
 
-		for (auto &question: fromMeArr)
+		for (auto &question: fromMeArr) {
 			fromMe[question->id] = question;
+			for (auto &thread: question->threads)
+				fromMe[thread->id] = thread;
+		}
 	}
 
 	void saveUpdates() {
@@ -431,6 +508,67 @@ public:
 
 		toMe[qid]->answer = answer;
 		saveUpdates();
+	}
+
+	UserInfo getUser(int userId) {
+		return userListing.getUser(userId);
+	}
+
+	vector<UserInfo> getAllSystemUsers() {
+		return userListing.getAllUsers();
+	}
+
+	void addQuestion(int to, bool AQ, string &question) {
+		if (userId == to)
+			return;
+
+		Question *q = new Question();
+		q->fromUserId = userId;
+		q->toUserId = to;
+		q->anonymous = AQ; 
+		q->question = question;
+		q->answer = "";
+		q->parentQuestionId = -1;
+		qLoaderSaver.addQuestion(q);
+	}
+
+	bool validThreadQuestion(int parentQID, int to) {
+		if (userId == to) { // User sending to himself 
+			cout << "Error 1\n";
+			return false; 
+		}
+
+		if (!parentQuestionExist(parentQID)) { // Parent Question Id Doesn't exist
+			cout << "Error 2\n";
+			return false;
+		} 
+		
+		if (questionToMeExist(parentQID)) { // Asking a thread question to a parent question sent to myself
+			cout << "Error 3\n";
+			return false;
+		} 
+
+		return true;
+	}
+
+	void addThreadQuestion(int parentQID, int to, bool AQ, string &question) {
+		if (!validThreadQuestion(parentQID, to))
+			return;
+
+		Question *thread = new Question();
+		thread->fromUserId = userId;
+		thread->toUserId = to;
+		thread->anonymous = AQ;
+		thread->question = question;
+		thread->answer = "";
+		thread->parentQuestionId = parentQID;
+
+		qLoaderSaver.addThreadQuestion(thread);
+	}
+
+	bool parentQuestionExist(int qid) {
+		update();
+		return qLoaderSaver.parentQuestionExist(qid);
 	}
 };
 
@@ -518,11 +656,13 @@ private:
 			else if (choice == 3)
 				answerQuestion();
 			else if (choice == 4);
-			else if (choice == 5);
-			else if (choice == 6);
+			else if (choice == 5)
+				askQuestion();
+			else if (choice == 6)
+				listSystemUsers();
 			else if (choice == 7);
 			else
-				cout << "ERROR: invalid number...Try again";
+				cout << "ERROR: invalid number...Try again\n";
 		}
 	}
 
@@ -555,6 +695,69 @@ private:
 		cout << "\n";
 	}
 
+	void askQuestion() {
+		cout << "Enter User id or -1 to cancel: ";
+		int toUserId;
+		cin >> toUserId;
+
+		if (toUserId == -1)
+			return;
+
+		UserInfo user = userOperations.getUser(toUserId);
+		if (user.id == this->userId) {
+			cout << "Cannot Ask a Question to yourself Try Again \n\n";
+			return;
+		}
+
+		if (user.id == -1) {
+			cout << "Invalid User ID Try Again\n\n";
+			return;
+		}
+
+		bool anonymous = false;
+		if (!user.AQ)
+			cout << "Note: Anonymous questions are not allowed for this user\n\n";
+		else {
+			cout << "Would you like to send this question anonymously (0/1): ";
+			cin >> anonymous;
+		}
+
+		cout << "For thread questions: Enter Questino id or -1 for new question: ";
+		int qid;
+		cin >> qid;
+		if (qid != -1) {
+			if (userOperations.questionToMeExist(qid)) {
+				cout << "Cannot ask a Thread Question to yourself\n\n";
+				return;
+			}
+
+			if (!userOperations.parentQuestionExist(qid)) {
+				cout << "Question Id Not Found Try Again\n\n";
+				return;
+			}
+		} 
+
+		cout << "Enter question text: ";
+		string question;
+		cin.ignore();
+		getline(cin, question);		
+
+		if (qid == -1)
+			userOperations.addQuestion(toUserId, anonymous, question);
+		else;
+			userOperations.addThreadQuestion(qid, toUserId, anonymous, question);
+
+		cout << "\n";
+	}
+
+	void listSystemUsers() {
+		vector<UserInfo> users = userOperations.getAllSystemUsers();
+		for (auto &user: users)
+			cout << "ID: " << user.id << "\t\t" << "Name: " << user.username << "\n";
+
+		cout << "\n";
+	}
+
 public:
 	QuestionsMenuUI(int userId): userId(userId), userOperations(userId) {
 		run();
@@ -569,7 +772,6 @@ public:
 		QuestionsMenuUI questionsMenuUI(userId);
 	}
 };
-
 
 int main() {
 	cout << boolalpha;

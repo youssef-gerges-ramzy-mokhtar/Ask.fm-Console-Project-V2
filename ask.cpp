@@ -61,66 +61,73 @@ struct UserInfo {
 	}
 };
 
-class Login {
-private:
-	const map<string, UserInfo> *users;
-
-public:
-	Login() {
-		users = new map<string, UserInfo>();
-	}
-	Login(const map<string, UserInfo> *users) : users(users) {}
-
-	int login(const string &username, const string &password) {
-		if (!users->count(username))
-			return -1;
-	
-		if (users->at(username).password != password)
-			return -1;
-
-		return users->at(username).id;
-	}
-};
-
-class Signup {
-private:
-	const map<string, UserInfo> *users;
-
-	bool userAlreadyExist(const string &username) {
-		if (users->count(username))
-			return true;
-		return false;
-	}
-
-	bool containsSpaces(const string &str) {
-		for (auto &ch: str)
-			if (ch == ' ')
-				return true;
-		
-		return false;
-	}
-
-public:
-	Signup() {
-		users = new map<string, UserInfo>();
-	}
-	Signup(const map<string, UserInfo> *users) : users(users) {}
-
-	int signup(const string &username, const string &password, const string &name, const string &email, int AQ) {
-		if (userAlreadyExist(username))
-			return -1;
-
-		if (containsSpaces(username) || containsSpaces(password) || containsSpaces(name) || containsSpaces(email))
-			return -1;
-
-		if (!(0 <= AQ && AQ <= 1))
-			return -1;
-
-		return users->size();
-	}
-};
-
 class Register {
+private:
+	class Login {
+	private:
+		const map<string, UserInfo> *users;
+
+	public:
+		Login() {
+			users = new map<string, UserInfo>();
+		}
+		Login(const map<string, UserInfo> *users) : users(users) {}
+
+		int login(const string &username, const string &password) {
+			if (!users->count(username))
+				return -1;
+		
+			if (users->at(username).password != password)
+				return -1;
+
+			return users->at(username).id;
+		}
+	};
+
+	class Signup {
+	private:
+		const map<string, UserInfo> *users;
+
+		bool userAlreadyExist(const string &username) {
+			if (users->count(username))
+				return true;
+			return false;
+		}
+
+		bool containsSpaces(const string &str) {
+			for (auto &ch: str)
+				if (ch == ' ')
+					return true;
+			
+			return false;
+		}
+
+		bool validUser(const string &username, const string &password, const string &name, const string &email, int AQ) {
+			if (userAlreadyExist(username))
+				return false;
+			
+			if (containsSpaces(username) || containsSpaces(password) || containsSpaces(name) || containsSpaces(email))
+				return false;
+			
+			if (!(0 <= AQ && AQ <= 1))
+				return false;
+
+			return true;
+		}
+
+	public:
+		Signup() {
+			users = new map<string, UserInfo>();
+		}
+		Signup(const map<string, UserInfo> *users) : users(users) {}
+
+		int signup(const string &username, const string &password, const string &name, const string &email, int AQ) {
+			if (!validUser(username, password, name, email, AQ))
+				return -1;
+			return users->size();
+		}
+	};
+
 private:
 	const string file = "users.txt";
 	FileDataBase fileDataBase;
@@ -280,6 +287,10 @@ struct Question {
 		getline(iss, question);
 		
 		this->answer = questionRecord.second;
+	}
+
+	bool answered() {
+		return answer != "";
 	}
 };
 
@@ -621,17 +632,51 @@ public:
 class QuestionsMenuUI {
 private:
 	class QuestoinPrinterUI {
+	private:
+		void listFeed(vector<Question*> &questions) {
+			for (auto &question: questions) {
+				if (question->answered())
+					formatQuestionsToMe(question);
+
+				for (auto &thread: question->threads)
+					if (thread->answered())
+						formatQuestionsToMe(thread, "Thread Parent ", false);
+			}
+		}
+
 	public:
 		QuestoinPrinterUI() {}
 
-		void formatQuestionsToMe(Question* question, string start = "") {
-			cout << start << "Question Id (" << question->id << ") from user id(" << question->fromUserId << ")\t"; 
+		void formatQuestionsToMe(Question* question, string start = "", bool displayStartForAnswer = true) {
+			cout << start << "Question Id (" << question->id << ") ";
+			if (!question->anonymous)
+				cout << "from user id(" << question->fromUserId << ")\t"; 
+			
 			cout << "Question: " << question->question << "\n";
 			
-			if (question->answer != "")
-				cout << start << "\tAnswer: " << question->answer << "\n";
+			if (question->answer != "") {
+				if (displayStartForAnswer)
+					cout << start;
+				cout << "\tAnswer: " << question->answer << "\n";
+			}
 		
 			cout << "\n";
+		}
+
+		void formatQuestionsFromMe(Question* question) {
+			cout << "Question Id (" << question->id << ")";
+			if (!question->anonymous)
+				cout << " !AQ";
+
+			cout << " to user id(" << question->toUserId << ")\t\t";
+			if (question->parentQuestionId != -1)
+				cout << "Thread ";
+			cout << "Question: " << question->question << "\t\t";
+
+			if (question->answer == "")
+				cout << "NOT Answered YET\n";
+			else
+				cout << "Answer: " << question->answer << "\n"; 		
 		}
 
 		void printQuestionsToMe(UserOperations &userOperations) {
@@ -648,21 +693,19 @@ private:
 			cout << "\n";
 			vector<Question*> fromMe = userOperations.getQuestionsFromMe();
 			for (auto &question: fromMe) {
-				cout << "Question Id (" << question->id << ")";
-
-				if (!question->anonymous)
-					cout << " !AQ";
-
-				cout << " to user id(" << question->toUserId << ")\t\t";
-				cout << "Question: " << question->question << "\t";
-
-				if (question->answer == "")
-					cout << "NOT Answered YET\n";
-				else
-					cout << "Answer: " << question->answer << "\n"; 		
+				formatQuestionsFromMe(question);
+				for (auto &thread: question->threads)
+					formatQuestionsFromMe(thread);
 			}
 
 			cout << "\n";
+		}
+
+		void feed(UserOperations &userOperations) {
+			vector<Question*> toMe = userOperations.getQuestionsToMe();
+			vector<Question*> fromMe = userOperations.getQuestionsFromMe();
+			listFeed(toMe);
+			listFeed(fromMe);
 		}
 	};
 
@@ -708,7 +751,8 @@ private:
 				askQuestion();
 			else if (choice == 6)
 				listSystemUsers();
-			else if (choice == 7);
+			else if (choice == 7)
+				qPrinter.feed(userOperations);
 			else
 				cout << "ERROR: invalid number...Try again\n";
 		}

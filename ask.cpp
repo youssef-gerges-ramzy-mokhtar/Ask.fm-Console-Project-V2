@@ -247,6 +247,7 @@ public:
 };
 // Registration Classes //
 
+// Question Operations Classes //
 struct Question {
 	int id;
 	int fromUserId;
@@ -347,11 +348,14 @@ private:
 	QuestionSaver qSaver = QuestionSaver();
 
 	int generateQuestionId() {
-		int id = 0;
-		for (auto &question: questions)
-			id += 1 + question->threads.size();
+		int id = -1;
+		for (auto &question: questions) {
+			id = max(id, question->id);
+			for (auto &thread: question->threads)
+				id = max(id, thread->id);
+		}
 
-		return id;
+		return id+1;
 	}
 
 public:
@@ -396,48 +400,76 @@ public:
 	bool parentQuestionExist(int qid) {
 		return questionsMap.count(qid);
 	}
-};
 
-class UserListing {
-private:
-	const string file = "users.txt";
-	FileDataBase fileDataBase;
-	vector<UserInfo> users;
+	void deleteQuestion(int qid) {
+		for (int i = 0; i < questions.size(); i++) {
+			auto &question = questions[i];
+			if (question->id == qid) {
+				swap(questions[i], questions[questions.size()-1]);
+				questions.pop_back();
+				save();
+				break;
+			}
 
-	void loadUsers() {
-		users.clear();
+			bool thread_found = false;
+			int threadsSize = question->threads.size();
+			for (int j = 0; j < threadsSize; j++) {
+				auto &thread = question->threads[j];
+				if (thread->id == qid) {
+					swap(question->threads[j], question->threads[threadsSize-1]);
+					question->threads.pop_back();
+					thread_found = true;
+					break;
+				}
+			}
 
-		vector<string> records = fileDataBase.read();
-		for (auto &record: records) {
-			UserInfo user;
-			user.decode(record);
-			users.push_back(user);
+			if (thread_found)
+				break;
 		}
-	}
-
-public:
-	UserListing() {
-		fileDataBase = FileDataBase(file);
-	}
-
-	UserInfo getUser(int userId) {
-		loadUsers();
-
-		for (auto &user: users)
-			if (user.id == userId)
-				return user;
-	
-		UserInfo notFoundUser = {-1};	
-		return notFoundUser;
-	}
-
-	vector<UserInfo> getAllUsers() {
-		loadUsers();
-		return users;
 	}
 };
 
 class UserOperations {
+private:
+	class UserListing {
+	private:
+		const string file = "users.txt";
+		FileDataBase fileDataBase;
+		vector<UserInfo> users;
+
+		void loadUsers() {
+			users.clear();
+
+			vector<string> records = fileDataBase.read();
+			for (auto &record: records) {
+				UserInfo user;
+				user.decode(record);
+				users.push_back(user);
+			}
+		}
+
+	public:
+		UserListing() {
+			fileDataBase = FileDataBase(file);
+		}
+
+		UserInfo getUser(int userId) {
+			loadUsers();
+
+			for (auto &user: users)
+				if (user.id == userId)
+					return user;
+		
+			UserInfo notFoundUser = {-1};	
+			return notFoundUser;
+		}
+
+		vector<UserInfo> getAllUsers() {
+			loadUsers();
+			return users;
+		}
+	};
+
 private:
 	int userId;
 	QuestionLoaderSaver qLoaderSaver;
@@ -491,6 +523,11 @@ public:
 	bool questionToMeExist(int qid) {
 		update();
 		return toMe.count(qid);
+	}
+
+	bool questionFromMeExist(int qid) {
+		update();
+		return fromMe.count(qid);
 	}
 
 	Question* getQuestionToMeWithId(int qid) {
@@ -552,6 +589,7 @@ public:
 	}
 
 	void addThreadQuestion(int parentQID, int to, bool AQ, string &question) {
+		update();
 		if (!validThreadQuestion(parentQID, to))
 			return;
 
@@ -570,55 +608,64 @@ public:
 		update();
 		return qLoaderSaver.parentQuestionExist(qid);
 	}
-};
 
-class QuestoinPrinterUI {
-public:
-	QuestoinPrinterUI() {}
+	void deleteQuestion(int qid) {
+		update();
+		if (!(questionToMeExist(qid) || questionFromMeExist(qid)))
+			return;
 
-	void formatQuestionsToMe(Question* question, string start = "") {
-		cout << start << "Question Id (" << question->id << ") from user id(" << question->fromUserId << ")\t"; 
-		cout << "Question: " << question->question << "\n";
-		
-		if (question->answer != "")
-			cout << start << "\tAnswer: " << question->answer << "\n";
-	
-		cout << "\n";
-	}
-
-	void printQuestionsToMe(UserOperations &userOperations) {
-		cout << "\n";
-		vector<Question*> toMe = userOperations.getQuestionsToMe();
-		for (auto &question: toMe) {
-			formatQuestionsToMe(question);
-			for (auto &thread: question->threads)
-				formatQuestionsToMe(thread, "\tThread: ");
-		}
-	}
-
-	void printQuestionsFromMe(UserOperations &userOperations) {
-		cout << "\n";
-		vector<Question*> fromMe = userOperations.getQuestionsFromMe();
-		for (auto &question: fromMe) {
-			cout << "Question Id (" << question->id << ")";
-
-			if (!question->anonymous)
-				cout << " !AQ";
-
-			cout << " to user id(" << question->toUserId << ")\t\t";
-			cout << "Question: " << question->question << "\t";
-
-			if (question->answer == "")
-				cout << "NOT Answered YET\n";
-			else
-				cout << "Answer: " << question->answer << "\n"; 		
-		}
-
-		cout << "\n";
+		qLoaderSaver.deleteQuestion(qid);
 	}
 };
 
 class QuestionsMenuUI {
+private:
+	class QuestoinPrinterUI {
+	public:
+		QuestoinPrinterUI() {}
+
+		void formatQuestionsToMe(Question* question, string start = "") {
+			cout << start << "Question Id (" << question->id << ") from user id(" << question->fromUserId << ")\t"; 
+			cout << "Question: " << question->question << "\n";
+			
+			if (question->answer != "")
+				cout << start << "\tAnswer: " << question->answer << "\n";
+		
+			cout << "\n";
+		}
+
+		void printQuestionsToMe(UserOperations &userOperations) {
+			cout << "\n";
+			vector<Question*> toMe = userOperations.getQuestionsToMe();
+			for (auto &question: toMe) {
+				formatQuestionsToMe(question);
+				for (auto &thread: question->threads)
+					formatQuestionsToMe(thread, "\tThread: ");
+			}
+		}
+
+		void printQuestionsFromMe(UserOperations &userOperations) {
+			cout << "\n";
+			vector<Question*> fromMe = userOperations.getQuestionsFromMe();
+			for (auto &question: fromMe) {
+				cout << "Question Id (" << question->id << ")";
+
+				if (!question->anonymous)
+					cout << " !AQ";
+
+				cout << " to user id(" << question->toUserId << ")\t\t";
+				cout << "Question: " << question->question << "\t";
+
+				if (question->answer == "")
+					cout << "NOT Answered YET\n";
+				else
+					cout << "Answer: " << question->answer << "\n"; 		
+			}
+
+			cout << "\n";
+		}
+	};
+
 private:
 	int userId;
 	UserOperations userOperations;
@@ -655,7 +702,8 @@ private:
 				qPrinter.printQuestionsFromMe(userOperations);
 			else if (choice == 3)
 				answerQuestion();
-			else if (choice == 4);
+			else if (choice == 4)
+				deleteQuestion();
 			else if (choice == 5)
 				askQuestion();
 			else if (choice == 6)
@@ -693,6 +741,19 @@ private:
 
 		userOperations.answerQuestion(qid, answer);
 		cout << "\n";
+	}
+
+	void deleteQuestion() {
+		cout << "Enter Question id or -1 to cancel: ";
+		int qid;
+		cin >> qid;
+
+		if (!(userOperations.questionToMeExist(qid) || userOperations.questionFromMeExist(qid))) {
+			cout << "Invalid Question ID Try Again\n\n";
+			return;
+		}
+
+		userOperations.deleteQuestion(qid);
 	}
 
 	void askQuestion() {
@@ -744,7 +805,7 @@ private:
 
 		if (qid == -1)
 			userOperations.addQuestion(toUserId, anonymous, question);
-		else;
+		else
 			userOperations.addThreadQuestion(qid, toUserId, anonymous, question);
 
 		cout << "\n";
@@ -763,6 +824,7 @@ public:
 		run();
 	}
 };
+// Question Operations Classes //
 
 class Ask {
 public:
